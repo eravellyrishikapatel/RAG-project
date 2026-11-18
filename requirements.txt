@@ -4,3 +4,10 @@ PyPDF2
 torch
 python-dotenv
 openai
+langchain
+langchain-community
+langchain-openai
+langchain-chroma
+langchain-text-splitters
+pypdf
+tiktoken
