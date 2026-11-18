@@ -1,8 +1,9 @@
 # PDF Chatbot with RAG
 
-Ask questions about a PDF using local embeddings and ChromaDB. The default
-answer mode is local and does not require an API key. On the first run,
-Sentence Transformers downloads the `all-MiniLM-L6-v2` embedding model.
+Ask questions about a PDF using local embeddings, ChromaDB, and a local
+language model. By default, the app generates answers with
+`Qwen/Qwen2.5-0.5B-Instruct` through Transformers; no API key is required.
+On the first run, it downloads the embedding model and LLM from Hugging Face.
 
 ## Requirements
 
@@ -46,7 +47,8 @@ local vector database when it starts.
 ## Answer modes
 
 - **Local (default):** No API key or paid service is required. The app selects
-  relevant sentences from the retrieved PDF text.
+  relevant PDF context and generates an answer with the local Qwen model. CPU
+  works, but generation may be slower than on a supported GPU.
 - **Optional OpenRouter:** Set `OPENROUTER_API_KEY` in a local `.env` file to
   use the configured OpenRouter model. Check the provider's current model
   availability and pricing before enabling it. Never commit your `.env` file.

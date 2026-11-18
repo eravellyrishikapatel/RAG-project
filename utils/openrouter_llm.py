@@ -1,58 +1,63 @@
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
 from config import client, MODEL_NAME
-import re
+
+LOCAL_MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
+
+_local_tokenizer = None
+_local_model = None
+_local_device = None
+
+
+def _load_local_model():
+    global _local_tokenizer, _local_model, _local_device
+
+    if _local_tokenizer is None or _local_model is None:
+        print(f"\nLoading local LLM: {LOCAL_MODEL_NAME}")
+        _local_tokenizer = AutoTokenizer.from_pretrained(LOCAL_MODEL_NAME)
+        _local_model = AutoModelForCausalLM.from_pretrained(LOCAL_MODEL_NAME)
+        _local_device = "cuda" if torch.cuda.is_available() else "cpu"
+        _local_model.to(_local_device)
+        _local_model.eval()
+        print(f"Local LLM loaded on {_local_device}.")
+
+    return _local_tokenizer, _local_model, _local_device
 
 
 def generate_local_answer(prompt):
-    context_match = re.search(
-        r"Context\s*(.*?)\s*={20,}",
-        prompt,
-        re.DOTALL | re.IGNORECASE
-    )
-    question_match = re.search(
-        r"Question\s*(.*?)\s*={20,}",
-        prompt,
-        re.DOTALL | re.IGNORECASE
-    )
-
-    if not context_match:
-        return "I couldn't find the answer in the provided PDF."
-
-    context = context_match.group(1).strip()
-    question = question_match.group(1).strip() if question_match else ""
-
-    stop_words = {
-        "a", "an", "the", "is", "are", "was", "were", "of", "in", "to",
-        "for", "and", "or", "what", "which", "who", "where", "when",
-        "how", "does", "do", "did", "can", "could", "should",
-    }
-    question_terms = {
-        word.lower() for word in re.findall(r"[A-Za-z0-9]+", question)
-        if word.lower() not in stop_words
-    }
-
-    sentences = [
-        sentence.strip()
-        for sentence in re.split(r"(?<=[.!?])\s+|\n+", context)
-        if sentence.strip()
+    tokenizer, model, device = _load_local_model()
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Answer the question using only the provided PDF context. "
+                "If the answer is not in the context, reply exactly: "
+                "\"I couldn't find the answer in the provided PDF.\""
+            ),
+        },
+        {"role": "user", "content": prompt},
     ]
+    model_inputs = tokenizer.apply_chat_template(
+        messages,
+        tokenize=True,
+        add_generation_prompt=True,
+        return_tensors="pt",
+    ).to(device)
+    input_ids = model_inputs["input_ids"]
 
-    ranked = []
-    for sentence in sentences:
-        terms = {
-            word.lower()
-            for word in re.findall(r"[A-Za-z0-9]+", sentence)
-        }
-        overlap = len(question_terms.intersection(terms))
-        if overlap:
-            ranked.append((overlap, sentence))
+    with torch.inference_mode():
+        generated_ids = model.generate(
+            **model_inputs,
+            max_new_tokens=256,
+            do_sample=False,
+            pad_token_id=tokenizer.eos_token_id,
+        )
 
-    ranked.sort(key=lambda item: item[0], reverse=True)
-    selected = [sentence for _, sentence in ranked[:3]]
+    answer_ids = generated_ids[0][input_ids.shape[-1]:]
+    answer = tokenizer.decode(answer_ids, skip_special_tokens=True).strip()
 
-    if not selected:
-        return "I couldn't find the answer in the provided PDF."
-
-    return " ".join(selected)
+    return answer or "I couldn't find the answer in the provided PDF."
 
 
 def generate_answer(prompt):
@@ -63,7 +68,7 @@ def generate_answer(prompt):
 
     if client is None:
         answer = generate_local_answer(prompt)
-        print("\nLocal Free-Source Response\n")
+        print(f"\nLocal LLM Response ({LOCAL_MODEL_NAME})\n")
         print(answer)
         return answer
 
